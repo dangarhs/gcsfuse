@@ -24,24 +24,73 @@ readonly EXECUTE_ORBAX_BENCHMARK_LABEL="execute-orbax-benchmark"
 readonly EXECUTE_MACHINE_TYPE_TEST_LABEL="execute-machine-type-test"
 readonly BUCKET_LOCATION=us-west4
 
-curl https://api.github.com/repos/GoogleCloudPlatform/gcsfuse/pulls/$KOKORO_GITHUB_PULL_REQUEST_NUMBER >> pr.json
-perfTest=$(grep "$EXECUTE_PERF_TEST_LABEL" pr.json)
-integrationTests=$(grep "\"$EXECUTE_INTEGRATION_TEST_LABEL\"" pr.json)
-integrationTestsOnZB=$(grep "\"$EXECUTE_INTEGRATION_TEST_LABEL_ON_ZB\"" pr.json)
-packageBuildTests=$(grep "$EXECUTE_PACKAGE_BUILD_TEST_LABEL" pr.json)
-checkpointTests=$(grep "$EXECUTE_CHECKPOINT_TEST_LABEL" pr.json)
-orbaxBenchmarkTest=$(grep "\"$EXECUTE_ORBAX_BENCHMARK_LABEL\"" pr.json)
-machineTypeTest=$(grep "\"$EXECUTE_MACHINE_TYPE_TEST_LABEL\"" pr.json)
+echo "Fetching labels for Pull Request #$KOKORO_GITHUB_PULL_REQUEST_NUMBER..."
+curl -s -L "https://api.github.com/repos/GoogleCloudPlatform/gcsfuse/pulls/$KOKORO_GITHUB_PULL_REQUEST_NUMBER" > pr.json
+
+# Extract and log received labels.
+labels=$(python3 -c "
+import json
+try:
+  with open('pr.json') as f:
+    data = json.load(f)
+    labels = [l['name'] for l in data.get('labels', []) if isinstance(l, dict) and 'name' in l]
+    print(', '.join(labels) if labels else 'None')
+except Exception:
+  print('None')
+")
+echo "Received labels: $labels"
+
+# Check pull request label triggers.
+perfTestTriggered="false"
+grep -q "$EXECUTE_PERF_TEST_LABEL" pr.json && perfTestTriggered="true"
+
+integrationTestsTriggered="false"
+grep -q "\"$EXECUTE_INTEGRATION_TEST_LABEL\"" pr.json && integrationTestsTriggered="true"
+
+integrationTestsOnZBTriggered="false"
+grep -q "\"$EXECUTE_INTEGRATION_TEST_LABEL_ON_ZB\"" pr.json && integrationTestsOnZBTriggered="true"
+
+packageBuildTestsTriggered="false"
+grep -q "$EXECUTE_PACKAGE_BUILD_TEST_LABEL" pr.json && packageBuildTestsTriggered="true"
+
+checkpointTestTriggered="false"
+grep -q "$EXECUTE_CHECKPOINT_TEST_LABEL" pr.json && checkpointTestTriggered="true"
+
+orbaxBenchmarkTestTriggered="false"
+grep -q "\"$EXECUTE_ORBAX_BENCHMARK_LABEL\"" pr.json && orbaxBenchmarkTestTriggered="true"
+
+machineTypeTestTriggered="false"
+grep -q "\"$EXECUTE_MACHINE_TYPE_TEST_LABEL\"" pr.json && machineTypeTestTriggered="true"
 
 rm pr.json
-perfTestStr="$perfTest"
-integrationTestsStr="$integrationTests"
-integrationTestsOnZBStr="$integrationTestsOnZB"
-packageBuildTestsStr="$packageBuildTests"
-checkpointTestStr="$checkpointTests"
-orbaxBenchmarkTestStr="$orbaxBenchmarkTest"
-machineTypeTestStr="$machineTypeTest"
-if [[ "$perfTestStr" != *"$EXECUTE_PERF_TEST_LABEL"*  && "$integrationTestsStr" != *"$EXECUTE_INTEGRATION_TEST_LABEL"*  && "$integrationTestsOnZBStr" != *"$EXECUTE_INTEGRATION_TEST_LABEL_ON_ZB"*  && "$packageBuildTestsStr" != *"$EXECUTE_PACKAGE_BUILD_TEST_LABEL"* && "$checkpointTestStr" != *"$EXECUTE_CHECKPOINT_TEST_LABEL"* && "$orbaxBenchmarkTestStr" != *"$EXECUTE_ORBAX_BENCHMARK_LABEL"* && "$machineTypeTestStr" != *"$EXECUTE_MACHINE_TYPE_TEST_LABEL"* ]]
+
+# Helper function to print a table row indicating if a label was found.
+function print_label_row() {
+  local label="$1"
+  local triggered="$2"
+  local val="NO"
+  if [[ "$triggered" == "true" ]]; then
+    val="YES"
+  fi
+  printf " %-38s | %-10s\n" "$label" "$val"
+}
+
+# Display summary table.
+echo "------------------------------------------------------------------"
+echo " PR Label Verification Summary"
+echo "------------------------------------------------------------------"
+printf " %-38s | %-10s\n" "Label Checked" "Triggered"
+echo "------------------------------------------------------------------"
+print_label_row "$EXECUTE_PERF_TEST_LABEL" "$perfTestTriggered"
+print_label_row "$EXECUTE_INTEGRATION_TEST_LABEL" "$integrationTestsTriggered"
+print_label_row "$EXECUTE_INTEGRATION_TEST_LABEL_ON_ZB" "$integrationTestsOnZBTriggered"
+print_label_row "$EXECUTE_PACKAGE_BUILD_TEST_LABEL" "$packageBuildTestsTriggered"
+print_label_row "$EXECUTE_CHECKPOINT_TEST_LABEL" "$checkpointTestTriggered"
+print_label_row "$EXECUTE_ORBAX_BENCHMARK_LABEL" "$orbaxBenchmarkTestTriggered"
+print_label_row "$EXECUTE_MACHINE_TYPE_TEST_LABEL" "$machineTypeTestTriggered"
+echo "------------------------------------------------------------------"
+
+if [[ "$perfTestTriggered" == "false" && "$integrationTestsTriggered" == "false" && "$integrationTestsOnZBTriggered" == "false" && "$packageBuildTestsTriggered" == "false" && "$checkpointTestTriggered" == "false" && "$orbaxBenchmarkTestTriggered" == "false" && "$machineTypeTestTriggered" == "false" ]]
 then
   echo "No need to execute tests"
   exit 0
@@ -104,7 +153,7 @@ function execute_gke_test() {
 }
 
 # execute perf tests.
-if [[ "$perfTestStr" == *"$EXECUTE_PERF_TEST_LABEL"* ]];
+if [[ "$perfTestTriggered" == "true" ]];
 then
  # Executing perf tests for master branch
  install_requirements
@@ -127,7 +176,7 @@ then
 fi
 
 # Execute integration tests on zonal bucket(s).
-if test -n "${integrationTestsOnZBStr}" ;
+if [[ "$integrationTestsOnZBTriggered" == "true" ]];
 then
   echo checkout PR branch
   git checkout pr/$KOKORO_GITHUB_PULL_REQUEST_NUMBER
@@ -137,7 +186,7 @@ then
 fi
 
 # Execute integration tests on non-zonal bucket(s).
-if test -n "${integrationTestsStr}" ;
+if [[ "$integrationTestsTriggered" == "true" ]];
 then
   echo checkout PR branch
   git checkout pr/$KOKORO_GITHUB_PULL_REQUEST_NUMBER
@@ -147,7 +196,7 @@ then
 fi
 
 # Execute package build tests.
-if [[ "$packageBuildTestsStr" == *"$EXECUTE_PACKAGE_BUILD_TEST_LABEL"* ]];
+if [[ "$packageBuildTestsTriggered" == "true" ]];
 then
   echo checkout PR branch
   git checkout pr/$KOKORO_GITHUB_PULL_REQUEST_NUMBER
@@ -157,7 +206,7 @@ then
 fi
 
 # Execute JAX checkpoints tests.
-if [[ "$checkpointTestStr" == *"$EXECUTE_CHECKPOINT_TEST_LABEL"* ]];
+if [[ "$checkpointTestTriggered" == "true" ]];
 then
   echo checkout PR branch
   git checkout pr/$KOKORO_GITHUB_PULL_REQUEST_NUMBER
@@ -167,14 +216,14 @@ then
 fi
 
 # Execute Orbax benchmark.
-if [[ "$orbaxBenchmarkTestStr" == *"$EXECUTE_ORBAX_BENCHMARK_LABEL"* ]];
+if [[ "$orbaxBenchmarkTestTriggered" == "true" ]];
 then
   echo "Running Orbax benchmark..."
   execute_gke_test "llama_europe_west4" "perfmetrics/scripts/continuous_test/gke/orbax_benchmark/run_benchmark.py"
 fi
 
 # Execute Machine Type Test.
-if [[ "$machineTypeTestStr" == *"$EXECUTE_MACHINE_TYPE_TEST_LABEL"* ]];
+if [[ "$machineTypeTestTriggered" == "true" ]];
 then
   echo "Running Machine Type Test..."
   execute_gke_test "gcsfuse_gke_machine_type_test_flat_euw4" "perfmetrics/scripts/continuous_test/gke/machine_type_test/run.py"
