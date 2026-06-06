@@ -593,7 +593,13 @@ func BucketType(ctx context.Context, testBucket string) (bucketType string, err 
 	defer cancel()
 	var opts []option.ClientOption
 	opts = append(opts, experimental.WithGRPCBidiReads())
-	if keyFile != "" {
+	if TestOnTPCEndPoint() {
+		cred, err := auth2.GetCredentials("/tmp/sa.key.json")
+		if err != nil {
+			return "", fmt.Errorf("failed to get credentials for TPC: %w", err)
+		}
+		opts = append(opts, option.WithEndpoint("storage.apis-tpczero.goog:443"), option.WithAuthCredentials(cred))
+	} else if keyFile != "" {
 		cred, err := auth2.GetCredentials(keyFile)
 		if err != nil {
 			return "", fmt.Errorf("failed to get credentials: %w", err)
