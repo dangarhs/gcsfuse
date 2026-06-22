@@ -177,6 +177,7 @@ func RunTests(t *testing.T, runName string, factory func(flags []string) suite.T
 	for _, cfg := range testEnv.cfg.Configs {
 		if cfg.Run == runName {
 			for _, flagStr := range cfg.Flags {
+				flagStr = strings.ReplaceAll(flagStr, ",", " ")
 				flags := strings.Fields(flagStr)
 				suite.Run(t, factory(flags))
 			}
