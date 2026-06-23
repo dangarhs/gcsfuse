@@ -354,10 +354,14 @@ func NewFileSystem(ctx context.Context, serverCfg *ServerConfig) (fuseutil.FileS
 			kernelParamsManager.SetReadAheadKb(int(serverCfg.NewConfig.FileSystem.MaxReadAheadKb))
 			kernelParamsManager.SetCongestionWindowThreshold(int(serverCfg.NewConfig.FileSystem.CongestionThreshold))
 			kernelParamsManager.SetMaxBackgroundRequests(int(serverCfg.NewConfig.FileSystem.MaxBackground))
-			if kernelparams.ShouldUpdateMaxPagesLimit(int(serverCfg.NewConfig.FileSystem.FuseMaxPagesLimit)) {
+			shouldUpdateMaxPages := kernelparams.ShouldUpdateMaxPagesLimit(int(serverCfg.NewConfig.FileSystem.FuseMaxPagesLimit))
+			if shouldUpdateMaxPages {
 				kernelParamsManager.SetMaxPagesLimit(int(serverCfg.NewConfig.FileSystem.FuseMaxPagesLimit))
 			}
 			kernelParamsManager.ApplyGKE(string(serverCfg.NewConfig.FileSystem.KernelParamsFile))
+			if shouldUpdateMaxPages {
+				kernelparams.WaitForMaxPagesLimitApplication(int(serverCfg.NewConfig.FileSystem.FuseMaxPagesLimit))
+			}
 		}
 		root = makeRootForBucket(fs, syncerBucket)
 	}

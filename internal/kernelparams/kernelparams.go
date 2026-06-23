@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/googlecloudplatform/gcsfuse/v3/internal/logger"
 	"golang.org/x/sys/unix"
@@ -299,4 +300,38 @@ func (m *KernelParamsManager) ApplyNonGKE(mountPoint string) {
 	}
 	logger.Info("Applying kernel parameters directly for non-GKE environment", "mountPoint", mountPoint, "kernel config", m.KernelParamsConfig)
 	m.applyDirectly(mountPoint)
+}
+
+// WaitForMaxPagesLimitApplication waits for the host's max_pages_limit
+// to be updated to a value that is at least targetLimit, up to a maximum
+// duration of 4 seconds.
+func WaitForMaxPagesLimitApplication(targetLimit int) {
+	if targetLimit <= 0 {
+		return
+	}
+
+	const maxWaitDuration = 4 * time.Second
+	const pollInterval = 100 * time.Millisecond
+
+	startTime := time.Now()
+	logger.Infof("Waiting for FUSE max_pages_limit to be applied on GKE (target: %d)...", targetLimit)
+
+	for {
+		currentLimit, err := readMaxPagesLimitFunc()
+		if err == nil && currentLimit >= targetLimit {
+			logger.Infof("FUSE max_pages_limit successfully applied (current: %d, target: %d) after %v", currentLimit, targetLimit, time.Since(startTime))
+			return
+		}
+
+		if time.Since(startTime) >= maxWaitDuration {
+			if err != nil {
+				logger.Warnf("Timed out waiting for FUSE max_pages_limit application. Failed to read current limit: %v", err)
+			} else {
+				logger.Warnf("Timed out waiting for FUSE max_pages_limit application (current: %d, target: %d) after %v", currentLimit, targetLimit, maxWaitDuration)
+			}
+			return
+		}
+
+		time.Sleep(pollInterval)
+	}
 }
